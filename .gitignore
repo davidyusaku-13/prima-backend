@@ -1,0 +1,29 @@
+# Secrets / local config
+.env
+.env.*
+!.env.example
+
+# Build artifacts (Go)
+backend
+backend.exe
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Coverage
+coverage.out
+coverage/
+*.coverprofile
+
+# Logs
+*.log
+
+# IDE / OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
