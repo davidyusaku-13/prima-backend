@@ -9,9 +9,15 @@ import (
 )
 
 type User struct {
-	ID       int64       `json:"id"`
-	ClerkID  string      `json:"clerk_id"`
-	Name     string      `json:"name"`
-	Email    pgtype.Text `json:"email"`
-	Username pgtype.Text `json:"username"`
+	ID          int64              `json:"id"`
+	ClerkID     string             `json:"clerk_id"`
+	Name        string             `json:"name"`
+	Email       pgtype.Text        `json:"email"`
+	Username    pgtype.Text        `json:"username"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
+	Role        string             `json:"role"`
+	IsActive    bool               `json:"is_active"`
+	LastLoginAt pgtype.Timestamptz `json:"last_login_at"`
 }

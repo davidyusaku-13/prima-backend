@@ -21,17 +21,34 @@ func (q *Queries) DeleteUserByClerkID(ctx context.Context, clerkID string) error
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, COALESCE(clerk_id, '')::text AS clerk_id, name, COALESCE(email, '')::text AS email, COALESCE(username, '')::text AS username
+SELECT
+    id,
+    COALESCE(clerk_id, '')::text      AS clerk_id,
+    name,
+    COALESCE(email, '')::text         AS email,
+    COALESCE(username, '')::text      AS username,
+    role,
+    is_active,
+    created_at,
+    updated_at,
+    deleted_at,
+    last_login_at
 FROM users
 ORDER BY id DESC
 `
 
 type ListUsersRow struct {
-	ID       int64  `json:"id"`
-	ClerkID  string `json:"clerk_id"`
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Username string `json:"username"`
+	ID          int64              `json:"id"`
+	ClerkID     string             `json:"clerk_id"`
+	Name        string             `json:"name"`
+	Email       string             `json:"email"`
+	Username    string             `json:"username"`
+	Role        string             `json:"role"`
+	IsActive    bool               `json:"is_active"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
+	LastLoginAt pgtype.Timestamptz `json:"last_login_at"`
 }
 
 func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
@@ -49,6 +66,12 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 			&i.Name,
 			&i.Email,
 			&i.Username,
+			&i.Role,
+			&i.IsActive,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.LastLoginAt,
 		); err != nil {
 			return nil, err
 		}
@@ -60,13 +83,36 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 	return items, nil
 }
 
+const softDeleteUserByClerkID = `-- name: SoftDeleteUserByClerkID :exec
+UPDATE users
+SET deleted_at = NOW(), is_active = FALSE, updated_at = NOW()
+WHERE clerk_id = $1
+`
+
+func (q *Queries) SoftDeleteUserByClerkID(ctx context.Context, clerkID string) error {
+	_, err := q.db.Exec(ctx, softDeleteUserByClerkID, clerkID)
+	return err
+}
+
+const updateLastLogin = `-- name: UpdateLastLogin :exec
+UPDATE users
+SET last_login_at = NOW(), updated_at = NOW()
+WHERE clerk_id = $1
+`
+
+func (q *Queries) UpdateLastLogin(ctx context.Context, clerkID string) error {
+	_, err := q.db.Exec(ctx, updateLastLogin, clerkID)
+	return err
+}
+
 const upsertByClerkID = `-- name: UpsertByClerkID :exec
-INSERT INTO users (clerk_id, username, name, email)
-VALUES ($1, $2, $3, $4)
+INSERT INTO users (clerk_id, username, name, email, role, is_active, created_at, updated_at)
+VALUES ($1, $2, $3, $4, 'user', TRUE, NOW(), NOW())
 ON CONFLICT (clerk_id) DO UPDATE
-SET username = EXCLUDED.username,
-    name     = EXCLUDED.name,
-    email    = COALESCE(EXCLUDED.email, users.email)
+SET username   = EXCLUDED.username,
+    name       = EXCLUDED.name,
+    email      = COALESCE(EXCLUDED.email, users.email),
+    updated_at = NOW()
 `
 
 type UpsertByClerkIDParams struct {

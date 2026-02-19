@@ -23,11 +23,17 @@ import (
 )
 
 type User struct {
-	ID       int64  `json:"id"`
-	ClerkID  string `json:"clerk_id,omitempty"`
-	Name     string `json:"name"`
-	Email    string `json:"email,omitempty"`
-	Username string `json:"username,omitempty"`
+	ID          int64  `json:"id"`
+	ClerkID     string `json:"clerk_id,omitempty"`
+	Name        string `json:"name"`
+	Email       string `json:"email,omitempty"`
+	Username    string `json:"username,omitempty"`
+	Role        string `json:"role"`
+	IsActive    bool   `json:"is_active"`
+	CreatedAt   string `json:"created_at,omitempty"`
+	UpdatedAt   string `json:"updated_at,omitempty"`
+	DeletedAt   string `json:"deleted_at,omitempty"`
+	LastLoginAt string `json:"last_login_at,omitempty"`
 }
 
 type ClerkWebhookEvent struct {
