@@ -13,7 +13,7 @@ type Querier interface {
 	ListUsers(ctx context.Context) ([]ListUsersRow, error)
 	SoftDeleteUserByClerkID(ctx context.Context, clerkID string) error
 	UpdateLastLogin(ctx context.Context, clerkID string) error
-	UpsertByClerkID(ctx context.Context, arg UpsertByClerkIDParams) error
+	UpsertUserWithRole(ctx context.Context, arg UpsertUserWithRoleParams) error
 }
 
 var _ Querier = (*Queries)(nil)

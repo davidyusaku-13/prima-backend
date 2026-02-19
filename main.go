@@ -250,7 +250,7 @@ func main() {
 				c.JSON(http.StatusOK, gin.H{"ok": true, "ignored": "missing id", "type": evt.Type})
 				return
 			}
-			if err := q.UpsertByClerkID(c.Request.Context(), db.UpsertByClerkIDParams{
+			if err := q.UpsertUserWithRole(c.Request.Context(), db.UpsertUserWithRoleParams{
 				ClerkID:  strings.TrimSpace(evt.Data.ID),
 				Username: toText(evt.Data.Username),
 				Name:     name,

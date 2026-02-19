@@ -105,9 +105,16 @@ func (q *Queries) UpdateLastLogin(ctx context.Context, clerkID string) error {
 	return err
 }
 
-const upsertByClerkID = `-- name: UpsertByClerkID :exec
+const upsertUserWithRole = `-- name: UpsertUserWithRole :exec
 INSERT INTO users (clerk_id, username, name, email, role, is_active, created_at, updated_at)
-VALUES ($1, $2, $3, $4, 'user', TRUE, NOW(), NOW())
+VALUES (
+  $1, $2, $3, $4,
+  CASE WHEN NOT EXISTS (SELECT 1 FROM users WHERE deleted_at IS NULL)
+       THEN 'superadmin'
+       ELSE 'user'
+  END,
+  TRUE, NOW(), NOW()
+)
 ON CONFLICT (clerk_id) DO UPDATE
 SET username   = EXCLUDED.username,
     name       = EXCLUDED.name,
@@ -115,15 +122,15 @@ SET username   = EXCLUDED.username,
     updated_at = NOW()
 `
 
-type UpsertByClerkIDParams struct {
+type UpsertUserWithRoleParams struct {
 	ClerkID  string      `json:"clerk_id"`
 	Username pgtype.Text `json:"username"`
 	Name     string      `json:"name"`
 	Email    pgtype.Text `json:"email"`
 }
 
-func (q *Queries) UpsertByClerkID(ctx context.Context, arg UpsertByClerkIDParams) error {
-	_, err := q.db.Exec(ctx, upsertByClerkID,
+func (q *Queries) UpsertUserWithRole(ctx context.Context, arg UpsertUserWithRoleParams) error {
+	_, err := q.db.Exec(ctx, upsertUserWithRole,
 		arg.ClerkID,
 		arg.Username,
 		arg.Name,

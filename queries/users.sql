@@ -1,6 +1,13 @@
--- name: UpsertByClerkID :exec
+-- name: UpsertUserWithRole :exec
 INSERT INTO users (clerk_id, username, name, email, role, is_active, created_at, updated_at)
-VALUES ($1, $2, $3, $4, 'user', TRUE, NOW(), NOW())
+VALUES (
+  $1, $2, $3, $4,
+  CASE WHEN NOT EXISTS (SELECT 1 FROM users WHERE deleted_at IS NULL)
+       THEN 'superadmin'
+       ELSE 'user'
+  END,
+  TRUE, NOW(), NOW()
+)
 ON CONFLICT (clerk_id) DO UPDATE
 SET username   = EXCLUDED.username,
     name       = EXCLUDED.name,
