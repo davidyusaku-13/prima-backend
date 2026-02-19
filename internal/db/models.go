@@ -19,4 +19,6 @@ type User struct {
 	Role        string             `json:"role"`
 	IsActive    bool               `json:"is_active"`
 	LastLoginAt pgtype.Timestamptz `json:"last_login_at"`
+	FirstName   pgtype.Text        `json:"first_name"`
+	LastName    pgtype.Text        `json:"last_name"`
 }

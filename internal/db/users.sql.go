@@ -26,6 +26,8 @@ SELECT
     name,
     COALESCE(email, '')::text         AS email,
     COALESCE(username, '')::text      AS username,
+    COALESCE(first_name, '')::text    AS first_name,
+    COALESCE(last_name, '')::text     AS last_name,
     role,
     is_active,
     created_at,
@@ -42,6 +44,8 @@ type ListUsersRow struct {
 	Name        string             `json:"name"`
 	Email       string             `json:"email"`
 	Username    string             `json:"username"`
+	FirstName   string             `json:"first_name"`
+	LastName    string             `json:"last_name"`
 	Role        string             `json:"role"`
 	IsActive    bool               `json:"is_active"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
@@ -64,6 +68,8 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 			&i.Name,
 			&i.Email,
 			&i.Username,
+			&i.FirstName,
+			&i.LastName,
 			&i.Role,
 			&i.IsActive,
 			&i.CreatedAt,
@@ -104,9 +110,9 @@ func (q *Queries) UpdateLastLogin(ctx context.Context, clerkID string) error {
 }
 
 const upsertUserWithRole = `-- name: UpsertUserWithRole :exec
-INSERT INTO users (clerk_id, username, name, email, role, is_active, created_at, updated_at)
+INSERT INTO users (clerk_id, username, name, first_name, last_name, email, role, is_active, created_at, updated_at)
 VALUES (
-  $1, $2, $3, $4,
+  $1, $2, $3, $5, $6, $4,
   CASE WHEN NOT EXISTS (SELECT 1 FROM users WHERE deleted_at IS NULL)
        THEN 'superadmin'
        ELSE 'user'
@@ -116,6 +122,8 @@ VALUES (
 ON CONFLICT (clerk_id) DO UPDATE
 SET username   = EXCLUDED.username,
     name       = EXCLUDED.name,
+    first_name = EXCLUDED.first_name,
+    last_name  = EXCLUDED.last_name,
     email      = COALESCE(EXCLUDED.email, users.email),
     is_active  = TRUE,
     deleted_at = NULL,
@@ -123,10 +131,12 @@ SET username   = EXCLUDED.username,
 `
 
 type UpsertUserWithRoleParams struct {
-	ClerkID  string      `json:"clerk_id"`
-	Username pgtype.Text `json:"username"`
-	Name     string      `json:"name"`
-	Email    pgtype.Text `json:"email"`
+	ClerkID   string      `json:"clerk_id"`
+	Username  pgtype.Text `json:"username"`
+	Name      string      `json:"name"`
+	Email     pgtype.Text `json:"email"`
+	FirstName pgtype.Text `json:"first_name"`
+	LastName  pgtype.Text `json:"last_name"`
 }
 
 func (q *Queries) UpsertUserWithRole(ctx context.Context, arg UpsertUserWithRoleParams) error {
@@ -135,6 +145,8 @@ func (q *Queries) UpsertUserWithRole(ctx context.Context, arg UpsertUserWithRole
 		arg.Username,
 		arg.Name,
 		arg.Email,
+		arg.FirstName,
+		arg.LastName,
 	)
 	return err
 }
