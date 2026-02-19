@@ -1,0 +1,2 @@
+ALTER TABLE users DROP COLUMN id;
+ALTER TABLE users ADD PRIMARY KEY (clerk_id);
