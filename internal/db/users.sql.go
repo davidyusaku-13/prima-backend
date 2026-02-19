@@ -110,9 +110,9 @@ func (q *Queries) UpdateLastLogin(ctx context.Context, clerkID string) error {
 }
 
 const upsertUserWithRole = `-- name: UpsertUserWithRole :exec
-INSERT INTO users (clerk_id, username, name, first_name, last_name, email, role, is_active, created_at, updated_at)
+INSERT INTO users (clerk_id, username, name, email, first_name, last_name, role, is_active, created_at, updated_at)
 VALUES (
-  $1, $2, $3, $5, $6, $4,
+  $1, $2, $3, $4, $5, $6,
   CASE WHEN NOT EXISTS (SELECT 1 FROM users WHERE deleted_at IS NULL)
        THEN 'superadmin'
        ELSE 'user'
