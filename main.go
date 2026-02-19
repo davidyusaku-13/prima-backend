@@ -28,6 +28,8 @@ import (
 type User struct {
 	ClerkID     string `json:"clerk_id,omitempty"`
 	Name        string `json:"name"`
+	FirstName   string `json:"first_name,omitempty"`
+	LastName    string `json:"last_name,omitempty"`
 	Email       string `json:"email,omitempty"`
 	Username    string `json:"username,omitempty"`
 	Role        string `json:"role"`
@@ -256,10 +258,12 @@ func main() {
 				return
 			}
 			if err := q.UpsertUserWithRole(c.Request.Context(), db.UpsertUserWithRoleParams{
-				ClerkID:  strings.TrimSpace(evt.Data.ID),
-				Username: toText(evt.Data.Username),
-				Name:     name,
-				Email:    toText(email),
+				ClerkID:   strings.TrimSpace(evt.Data.ID),
+				Username:  toText(evt.Data.Username),
+				Name:      name,
+				Email:     toText(email),
+				FirstName: toText(evt.Data.FirstName),
+				LastName:  toText(evt.Data.LastName),
 			}); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
