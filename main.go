@@ -30,13 +30,6 @@ type User struct {
 	Username string `json:"username,omitempty"`
 }
 
-type UpsertUserInput struct {
-	ClerkID  string `json:"clerk_id,omitempty"`
-	Name     string `json:"name" binding:"required"`
-	Email    string `json:"email,omitempty"`
-	Username string `json:"username,omitempty"`
-}
-
 type ClerkWebhookEvent struct {
 	Type string `json:"type"`
 	Data struct {
@@ -71,45 +64,6 @@ func pickClerkEmail(evt ClerkWebhookEvent) string {
 		}
 	}
 	return ""
-}
-
-func upsertManual(ctx context.Context, q *db.Queries, in UpsertUserInput) (User, error) {
-	name := strings.TrimSpace(in.Name)
-	email := strings.ToLower(strings.TrimSpace(in.Email))
-	username := strings.TrimSpace(in.Username)
-	clerkID := strings.TrimSpace(in.ClerkID)
-
-	switch {
-	case clerkID != "":
-		row, err := q.UpsertByClerkIDReturning(ctx, db.UpsertByClerkIDReturningParams{
-			ClerkID:  toText(clerkID),
-			Username: toText(username),
-			Name:     name,
-			Email:    toText(email),
-		})
-		return User{ID: row.ID, ClerkID: row.ClerkID, Name: row.Name, Email: row.Email, Username: row.Username}, err
-
-	case email != "":
-		row, err := q.UpsertByEmail(ctx, db.UpsertByEmailParams{
-			ClerkID:  toText(clerkID),
-			Username: toText(username),
-			Name:     name,
-			Email:    toText(email),
-		})
-		return User{ID: row.ID, ClerkID: row.ClerkID, Name: row.Name, Email: row.Email, Username: row.Username}, err
-
-	case username != "":
-		row, err := q.UpsertByUsername(ctx, db.UpsertByUsernameParams{
-			ClerkID:  toText(clerkID),
-			Username: toText(username),
-			Name:     name,
-			Email:    toText(email),
-		})
-		return User{ID: row.ID, ClerkID: row.ClerkID, Name: row.Name, Email: row.Email, Username: row.Username}, err
-
-	default:
-		return User{}, http.ErrMissingFile
-	}
 }
 
 // Minimal Svix verification for Clerk webhooks.
@@ -251,20 +205,6 @@ func main() {
 		c.JSON(http.StatusOK, users)
 	})
 
-	r.POST("/users", func(c *gin.Context) {
-		var in UpsertUserInput
-		if err := c.ShouldBindJSON(&in); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		u, err := upsertManual(c.Request.Context(), q, in)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "provide at least one of: clerk_id, username, or email"})
-			return
-		}
-		c.JSON(http.StatusOK, u)
-	})
-
 	r.POST("/webhooks/clerk", func(c *gin.Context) {
 		body, err := io.ReadAll(c.Request.Body)
 		if err != nil {
@@ -305,7 +245,7 @@ func main() {
 				return
 			}
 			if err := q.UpsertByClerkID(c.Request.Context(), db.UpsertByClerkIDParams{
-				ClerkID:  toText(evt.Data.ID),
+				ClerkID:  strings.TrimSpace(evt.Data.ID),
 				Username: toText(evt.Data.Username),
 				Name:     name,
 				Email:    toText(email),
@@ -315,7 +255,7 @@ func main() {
 			}
 		case "user.deleted":
 			if strings.TrimSpace(evt.Data.ID) != "" {
-				if err := q.DeleteUserByClerkID(c.Request.Context(), toText(evt.Data.ID)); err != nil {
+				if err := q.DeleteUserByClerkID(c.Request.Context(), strings.TrimSpace(evt.Data.ID)); err != nil {
 					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 					return
 				}

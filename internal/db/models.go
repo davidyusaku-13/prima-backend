@@ -10,7 +10,7 @@ import (
 
 type User struct {
 	ID       int64       `json:"id"`
-	ClerkID  pgtype.Text `json:"clerk_id"`
+	ClerkID  string      `json:"clerk_id"`
 	Name     string      `json:"name"`
 	Email    pgtype.Text `json:"email"`
 	Username pgtype.Text `json:"username"`

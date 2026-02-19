@@ -6,17 +6,12 @@ package db
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
-	DeleteUserByClerkID(ctx context.Context, clerkID pgtype.Text) error
+	DeleteUserByClerkID(ctx context.Context, clerkID string) error
 	ListUsers(ctx context.Context) ([]ListUsersRow, error)
 	UpsertByClerkID(ctx context.Context, arg UpsertByClerkIDParams) error
-	UpsertByClerkIDReturning(ctx context.Context, arg UpsertByClerkIDReturningParams) (UpsertByClerkIDReturningRow, error)
-	UpsertByEmail(ctx context.Context, arg UpsertByEmailParams) (UpsertByEmailRow, error)
-	UpsertByUsername(ctx context.Context, arg UpsertByUsernameParams) (UpsertByUsernameRow, error)
 }
 
 var _ Querier = (*Queries)(nil)

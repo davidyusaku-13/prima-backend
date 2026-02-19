@@ -15,7 +15,7 @@ const deleteUserByClerkID = `-- name: DeleteUserByClerkID :exec
 DELETE FROM users WHERE clerk_id = $1
 `
 
-func (q *Queries) DeleteUserByClerkID(ctx context.Context, clerkID pgtype.Text) error {
+func (q *Queries) DeleteUserByClerkID(ctx context.Context, clerkID string) error {
 	_, err := q.db.Exec(ctx, deleteUserByClerkID, clerkID)
 	return err
 }
@@ -70,7 +70,7 @@ SET username = EXCLUDED.username,
 `
 
 type UpsertByClerkIDParams struct {
-	ClerkID  pgtype.Text `json:"clerk_id"`
+	ClerkID  string      `json:"clerk_id"`
 	Username pgtype.Text `json:"username"`
 	Name     string      `json:"name"`
 	Email    pgtype.Text `json:"email"`
@@ -84,130 +84,4 @@ func (q *Queries) UpsertByClerkID(ctx context.Context, arg UpsertByClerkIDParams
 		arg.Email,
 	)
 	return err
-}
-
-const upsertByClerkIDReturning = `-- name: UpsertByClerkIDReturning :one
-INSERT INTO users (clerk_id, username, name, email)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (clerk_id) DO UPDATE
-SET username = EXCLUDED.username,
-    name     = EXCLUDED.name,
-    email    = COALESCE(EXCLUDED.email, users.email)
-RETURNING id, COALESCE(clerk_id, '')::text AS clerk_id, name, COALESCE(email, '')::text AS email, COALESCE(username, '')::text AS username
-`
-
-type UpsertByClerkIDReturningParams struct {
-	ClerkID  pgtype.Text `json:"clerk_id"`
-	Username pgtype.Text `json:"username"`
-	Name     string      `json:"name"`
-	Email    pgtype.Text `json:"email"`
-}
-
-type UpsertByClerkIDReturningRow struct {
-	ID       int64  `json:"id"`
-	ClerkID  string `json:"clerk_id"`
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Username string `json:"username"`
-}
-
-func (q *Queries) UpsertByClerkIDReturning(ctx context.Context, arg UpsertByClerkIDReturningParams) (UpsertByClerkIDReturningRow, error) {
-	row := q.db.QueryRow(ctx, upsertByClerkIDReturning,
-		arg.ClerkID,
-		arg.Username,
-		arg.Name,
-		arg.Email,
-	)
-	var i UpsertByClerkIDReturningRow
-	err := row.Scan(
-		&i.ID,
-		&i.ClerkID,
-		&i.Name,
-		&i.Email,
-		&i.Username,
-	)
-	return i, err
-}
-
-const upsertByEmail = `-- name: UpsertByEmail :one
-INSERT INTO users (clerk_id, username, name, email)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (email) DO UPDATE
-SET name     = EXCLUDED.name,
-    username = COALESCE(EXCLUDED.username, users.username)
-RETURNING id, COALESCE(clerk_id, '')::text AS clerk_id, name, COALESCE(email, '')::text AS email, COALESCE(username, '')::text AS username
-`
-
-type UpsertByEmailParams struct {
-	ClerkID  pgtype.Text `json:"clerk_id"`
-	Username pgtype.Text `json:"username"`
-	Name     string      `json:"name"`
-	Email    pgtype.Text `json:"email"`
-}
-
-type UpsertByEmailRow struct {
-	ID       int64  `json:"id"`
-	ClerkID  string `json:"clerk_id"`
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Username string `json:"username"`
-}
-
-func (q *Queries) UpsertByEmail(ctx context.Context, arg UpsertByEmailParams) (UpsertByEmailRow, error) {
-	row := q.db.QueryRow(ctx, upsertByEmail,
-		arg.ClerkID,
-		arg.Username,
-		arg.Name,
-		arg.Email,
-	)
-	var i UpsertByEmailRow
-	err := row.Scan(
-		&i.ID,
-		&i.ClerkID,
-		&i.Name,
-		&i.Email,
-		&i.Username,
-	)
-	return i, err
-}
-
-const upsertByUsername = `-- name: UpsertByUsername :one
-INSERT INTO users (clerk_id, username, name, email)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (username) DO UPDATE
-SET name = EXCLUDED.name
-RETURNING id, COALESCE(clerk_id, '')::text AS clerk_id, name, COALESCE(email, '')::text AS email, COALESCE(username, '')::text AS username
-`
-
-type UpsertByUsernameParams struct {
-	ClerkID  pgtype.Text `json:"clerk_id"`
-	Username pgtype.Text `json:"username"`
-	Name     string      `json:"name"`
-	Email    pgtype.Text `json:"email"`
-}
-
-type UpsertByUsernameRow struct {
-	ID       int64  `json:"id"`
-	ClerkID  string `json:"clerk_id"`
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Username string `json:"username"`
-}
-
-func (q *Queries) UpsertByUsername(ctx context.Context, arg UpsertByUsernameParams) (UpsertByUsernameRow, error) {
-	row := q.db.QueryRow(ctx, upsertByUsername,
-		arg.ClerkID,
-		arg.Username,
-		arg.Name,
-		arg.Email,
-	)
-	var i UpsertByUsernameRow
-	err := row.Scan(
-		&i.ID,
-		&i.ClerkID,
-		&i.Name,
-		&i.Email,
-		&i.Username,
-	)
-	return i, err
 }
