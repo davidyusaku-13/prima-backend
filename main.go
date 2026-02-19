@@ -242,7 +242,7 @@ func main() {
 			return
 		}
 
-		name := strings.TrimSpace(evt.Data.FirstName + " " + evt.Data.LastName)
+		name := strings.TrimSpace(strings.TrimSpace(evt.Data.FirstName) + " " + strings.TrimSpace(evt.Data.LastName))
 		if name == "" {
 			name = strings.TrimSpace(evt.Data.Username)
 		}
