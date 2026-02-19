@@ -9,7 +9,6 @@ import (
 )
 
 type User struct {
-	ID          int64              `json:"id"`
 	ClerkID     string             `json:"clerk_id"`
 	Name        string             `json:"name"`
 	Email       pgtype.Text        `json:"email"`

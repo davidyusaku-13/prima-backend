@@ -12,11 +12,12 @@ ON CONFLICT (clerk_id) DO UPDATE
 SET username   = EXCLUDED.username,
     name       = EXCLUDED.name,
     email      = COALESCE(EXCLUDED.email, users.email),
+    is_active  = TRUE,
+    deleted_at = NULL,
     updated_at = NOW();
 
 -- name: ListUsers :many
 SELECT
-    id,
     COALESCE(clerk_id, '')::text      AS clerk_id,
     name,
     COALESCE(email, '')::text         AS email,
@@ -28,7 +29,8 @@ SELECT
     deleted_at,
     last_login_at
 FROM users
-ORDER BY id DESC;
+WHERE deleted_at IS NULL
+ORDER BY created_at DESC, clerk_id DESC;
 
 -- name: DeleteUserByClerkID :exec
 DELETE FROM users WHERE clerk_id = $1;

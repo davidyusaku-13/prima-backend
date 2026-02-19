@@ -22,8 +22,10 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// User is kept in sync with db.ListUsersRow as an API contract reference.
+// The /users handler serializes db.ListUsersRow directly; this struct is not
+// used for actual responses.
 type User struct {
-	ID          int64  `json:"id"`
 	ClerkID     string `json:"clerk_id,omitempty"`
 	Name        string `json:"name"`
 	Email       string `json:"email,omitempty"`
@@ -171,6 +173,9 @@ func main() {
 		panic("DATABASE_URL is required")
 	}
 	webhookSecret := os.Getenv("CLERK_WEBHOOK_SECRET")
+	if webhookSecret == "" {
+		panic("CLERK_WEBHOOK_SECRET is required")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
@@ -261,7 +266,7 @@ func main() {
 			}
 		case "user.deleted":
 			if strings.TrimSpace(evt.Data.ID) != "" {
-				if err := q.DeleteUserByClerkID(c.Request.Context(), strings.TrimSpace(evt.Data.ID)); err != nil {
+				if err := q.SoftDeleteUserByClerkID(c.Request.Context(), strings.TrimSpace(evt.Data.ID)); err != nil {
 					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 					return
 				}

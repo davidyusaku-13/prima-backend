@@ -22,7 +22,6 @@ func (q *Queries) DeleteUserByClerkID(ctx context.Context, clerkID string) error
 
 const listUsers = `-- name: ListUsers :many
 SELECT
-    id,
     COALESCE(clerk_id, '')::text      AS clerk_id,
     name,
     COALESCE(email, '')::text         AS email,
@@ -34,11 +33,11 @@ SELECT
     deleted_at,
     last_login_at
 FROM users
-ORDER BY id DESC
+WHERE deleted_at IS NULL
+ORDER BY created_at DESC, clerk_id DESC
 `
 
 type ListUsersRow struct {
-	ID          int64              `json:"id"`
 	ClerkID     string             `json:"clerk_id"`
 	Name        string             `json:"name"`
 	Email       string             `json:"email"`
@@ -61,7 +60,6 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 	for rows.Next() {
 		var i ListUsersRow
 		if err := rows.Scan(
-			&i.ID,
 			&i.ClerkID,
 			&i.Name,
 			&i.Email,
@@ -119,6 +117,8 @@ ON CONFLICT (clerk_id) DO UPDATE
 SET username   = EXCLUDED.username,
     name       = EXCLUDED.name,
     email      = COALESCE(EXCLUDED.email, users.email),
+    is_active  = TRUE,
+    deleted_at = NULL,
     updated_at = NOW()
 `
 
