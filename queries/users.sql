@@ -1,7 +1,7 @@
 -- name: UpsertUserWithRole :exec
-INSERT INTO users (clerk_id, username, name, email, role, is_active, created_at, updated_at)
+INSERT INTO users (clerk_id, username, name, first_name, last_name, email, role, is_active, created_at, updated_at)
 VALUES (
-  $1, $2, $3, $4,
+  $1, $2, $3, $5, $6, $4,
   CASE WHEN NOT EXISTS (SELECT 1 FROM users WHERE deleted_at IS NULL)
        THEN 'superadmin'
        ELSE 'user'
@@ -11,6 +11,8 @@ VALUES (
 ON CONFLICT (clerk_id) DO UPDATE
 SET username   = EXCLUDED.username,
     name       = EXCLUDED.name,
+    first_name = EXCLUDED.first_name,
+    last_name  = EXCLUDED.last_name,
     email      = COALESCE(EXCLUDED.email, users.email),
     is_active  = TRUE,
     deleted_at = NULL,
@@ -22,6 +24,8 @@ SELECT
     name,
     COALESCE(email, '')::text         AS email,
     COALESCE(username, '')::text      AS username,
+    COALESCE(first_name, '')::text    AS first_name,
+    COALESCE(last_name, '')::text     AS last_name,
     role,
     is_active,
     created_at,
