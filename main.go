@@ -13,7 +13,10 @@ import (
 	"sync"
 	"time"
 
+	"backend/internal/db"
+
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"golang.org/x/time/rate"
@@ -49,12 +52,9 @@ type ClerkWebhookEvent struct {
 	} `json:"data"`
 }
 
-func nullableTrimmed(s string) any {
-	v := strings.TrimSpace(s)
-	if v == "" {
-		return nil
-	}
-	return v
+func toText(s string) pgtype.Text {
+	s = strings.TrimSpace(s)
+	return pgtype.Text{String: s, Valid: s != ""}
 }
 
 func pickClerkEmail(evt ClerkWebhookEvent) string {
@@ -73,69 +73,42 @@ func pickClerkEmail(evt ClerkWebhookEvent) string {
 	return ""
 }
 
-func upsertByClerkID(ctx context.Context, db *pgxpool.Pool, clerkID, username, name, email string) error {
-	_, err := db.Exec(ctx, `
-        INSERT INTO users (clerk_id, username, name, email)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (clerk_id) DO UPDATE
-        SET username = EXCLUDED.username,
-            name = EXCLUDED.name,
-            email = COALESCE(EXCLUDED.email, users.email)
-    `,
-		strings.TrimSpace(clerkID),
-		nullableTrimmed(username),
-		strings.TrimSpace(name),
-		nullableTrimmed(strings.ToLower(strings.TrimSpace(email))),
-	)
-	return err
-}
-
-func upsertManual(ctx context.Context, db *pgxpool.Pool, in UpsertUserInput) (User, error) {
+func upsertManual(ctx context.Context, q *db.Queries, in UpsertUserInput) (User, error) {
 	name := strings.TrimSpace(in.Name)
 	email := strings.ToLower(strings.TrimSpace(in.Email))
 	username := strings.TrimSpace(in.Username)
 	clerkID := strings.TrimSpace(in.ClerkID)
 
-	var u User
 	switch {
 	case clerkID != "":
-		err := db.QueryRow(ctx, `
-            INSERT INTO users (clerk_id, username, name, email)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (clerk_id) DO UPDATE
-            SET username = EXCLUDED.username,
-                name = EXCLUDED.name,
-                email = COALESCE(EXCLUDED.email, users.email)
-            RETURNING id, COALESCE(clerk_id,''), name, COALESCE(email,''), COALESCE(username,'')
-        `, clerkID, nullableTrimmed(username), name, nullableTrimmed(email)).
-			Scan(&u.ID, &u.ClerkID, &u.Name, &u.Email, &u.Username)
-		return u, err
+		row, err := q.UpsertByClerkIDReturning(ctx, db.UpsertByClerkIDReturningParams{
+			ClerkID:  toText(clerkID),
+			Username: toText(username),
+			Name:     name,
+			Email:    toText(email),
+		})
+		return User{ID: row.ID, ClerkID: row.ClerkID, Name: row.Name, Email: row.Email, Username: row.Username}, err
 
 	case email != "":
-		err := db.QueryRow(ctx, `
-            INSERT INTO users (clerk_id, username, name, email)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (email) DO UPDATE
-            SET name = EXCLUDED.name,
-                username = COALESCE(EXCLUDED.username, users.username)
-            RETURNING id, COALESCE(clerk_id,''), name, COALESCE(email,''), COALESCE(username,'')
-        `, nullableTrimmed(clerkID), nullableTrimmed(username), name, email).
-			Scan(&u.ID, &u.ClerkID, &u.Name, &u.Email, &u.Username)
-		return u, err
+		row, err := q.UpsertByEmail(ctx, db.UpsertByEmailParams{
+			ClerkID:  toText(clerkID),
+			Username: toText(username),
+			Name:     name,
+			Email:    toText(email),
+		})
+		return User{ID: row.ID, ClerkID: row.ClerkID, Name: row.Name, Email: row.Email, Username: row.Username}, err
 
 	case username != "":
-		err := db.QueryRow(ctx, `
-            INSERT INTO users (clerk_id, username, name, email)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (username) DO UPDATE
-            SET name = EXCLUDED.name
-            RETURNING id, COALESCE(clerk_id,''), name, COALESCE(email,''), COALESCE(username,'')
-        `, nullableTrimmed(clerkID), username, name, nullableTrimmed(email)).
-			Scan(&u.ID, &u.ClerkID, &u.Name, &u.Email, &u.Username)
-		return u, err
+		row, err := q.UpsertByUsername(ctx, db.UpsertByUsernameParams{
+			ClerkID:  toText(clerkID),
+			Username: toText(username),
+			Name:     name,
+			Email:    toText(email),
+		})
+		return User{ID: row.ID, ClerkID: row.ClerkID, Name: row.Name, Email: row.Email, Username: row.Username}, err
 
 	default:
-		return u, http.ErrMissingFile // reused as a simple non-nil error
+		return User{}, http.ErrMissingFile
 	}
 }
 
@@ -242,22 +215,24 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 
-	db, err := pgxpool.New(ctx, dsn)
+	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		panic(err)
 	}
-	defer db.Close()
+	defer pool.Close()
 
-	if err := db.Ping(ctx); err != nil {
+	if err := pool.Ping(ctx); err != nil {
 		panic(err)
 	}
+
+	q := db.New(pool)
 
 	r := gin.Default()
 	r.Use(rateLimitMiddleware(newLimiterStore(10, 20))) // 10 req/sec per IP, burst 20
 
 	r.GET("/health", func(c *gin.Context) {
 		var v int
-		if err := db.QueryRow(c.Request.Context(), "SELECT 1").Scan(&v); err != nil {
+		if err := pool.QueryRow(c.Request.Context(), "SELECT 1").Scan(&v); err != nil {
 			c.JSON(http.StatusOK, gin.H{"status": "degraded", "db": "down"})
 			return
 		}
@@ -265,25 +240,13 @@ func main() {
 	})
 
 	r.GET("/users", func(c *gin.Context) {
-		rows, err := db.Query(c.Request.Context(), `
-            SELECT id, COALESCE(clerk_id,''), name, COALESCE(email,''), COALESCE(username,'')
-            FROM users
-            ORDER BY id DESC
-        `)
+		users, err := q.ListUsers(c.Request.Context())
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		defer rows.Close()
-
-		users := make([]User, 0)
-		for rows.Next() {
-			var u User
-			if err := rows.Scan(&u.ID, &u.ClerkID, &u.Name, &u.Email, &u.Username); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			users = append(users, u)
+		if users == nil {
+			users = []db.ListUsersRow{}
 		}
 		c.JSON(http.StatusOK, users)
 	})
@@ -294,7 +257,7 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		u, err := upsertManual(c.Request.Context(), db, in)
+		u, err := upsertManual(c.Request.Context(), q, in)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "provide at least one of: clerk_id, username, or email"})
 			return
@@ -341,13 +304,18 @@ func main() {
 				c.JSON(http.StatusOK, gin.H{"ok": true, "ignored": "missing id", "type": evt.Type})
 				return
 			}
-			if err := upsertByClerkID(c.Request.Context(), db, evt.Data.ID, evt.Data.Username, name, email); err != nil {
+			if err := q.UpsertByClerkID(c.Request.Context(), db.UpsertByClerkIDParams{
+				ClerkID:  toText(evt.Data.ID),
+				Username: toText(evt.Data.Username),
+				Name:     name,
+				Email:    toText(email),
+			}); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
 		case "user.deleted":
 			if strings.TrimSpace(evt.Data.ID) != "" {
-				if _, err := db.Exec(c.Request.Context(), `DELETE FROM users WHERE clerk_id = $1`, evt.Data.ID); err != nil {
+				if err := q.DeleteUserByClerkID(c.Request.Context(), toText(evt.Data.ID)); err != nil {
 					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 					return
 				}
