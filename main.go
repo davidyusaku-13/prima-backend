@@ -15,6 +15,8 @@ import (
 
 	"backend/internal/db"
 
+	clerkSDK "github.com/clerk/clerk-sdk-go/v2"
+	"github.com/clerk/clerk-sdk-go/v2/jwt"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -167,8 +169,59 @@ func rateLimitMiddleware(ls *limiterStore) gin.HandlerFunc {
 	}
 }
 
+// clerkAuthMiddleware verifies the Clerk session JWT and enforces that the
+// caller has role "superadmin" or "admin" in the database.
+func clerkAuthMiddleware(q *db.Queries) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing authorization header"})
+			return
+		}
+
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+
+		// Verify JWT against Clerk's JWKS endpoint.
+		claims, err := jwt.Verify(c.Request.Context(), &jwt.VerifyParams{Token: token})
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+			return
+		}
+
+		clerkID := claims.Subject
+
+		if clerkID == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token subject"})
+			return
+		}
+
+		// Look up the caller's role in the database.
+		role, err := q.GetUserRole(c.Request.Context(), clerkID)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "user not found or inactive"})
+			return
+		}
+
+		if role != "superadmin" && role != "admin" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})
+			return
+		}
+
+		// Store caller identity in context for downstream handlers.
+		c.Set("clerk_id", clerkID)
+		c.Set("role", role)
+		c.Next()
+	}
+}
+
 func main() {
 	_ = godotenv.Load()
+
+	clerkSecretKey := os.Getenv("CLERK_SECRET_KEY")
+	if clerkSecretKey == "" {
+		panic("CLERK_SECRET_KEY is not set")
+	}
+	clerkSDK.SetKey(clerkSecretKey)
 
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -206,10 +259,10 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "db": "up"})
 	})
 
-	r.GET("/users", func(c *gin.Context) {
+	r.GET("/users", clerkAuthMiddleware(q), func(c *gin.Context) {
 		users, err := q.ListUsers(c.Request.Context())
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve users"})
 			return
 		}
 		if users == nil {
