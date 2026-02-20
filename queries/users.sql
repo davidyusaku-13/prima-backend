@@ -48,3 +48,6 @@ WHERE clerk_id = $1;
 UPDATE users
 SET last_login_at = NOW(), updated_at = NOW()
 WHERE clerk_id = $1;
+
+-- name: GetUserRole :one
+SELECT role FROM users WHERE clerk_id = $1 AND is_active = TRUE AND deleted_at IS NULL;

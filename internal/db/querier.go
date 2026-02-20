@@ -10,6 +10,7 @@ import (
 
 type Querier interface {
 	DeleteUserByClerkID(ctx context.Context, clerkID string) error
+	GetUserRole(ctx context.Context, clerkID string) (string, error)
 	ListUsers(ctx context.Context) ([]ListUsersRow, error)
 	SoftDeleteUserByClerkID(ctx context.Context, clerkID string) error
 	UpdateLastLogin(ctx context.Context, clerkID string) error

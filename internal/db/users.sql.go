@@ -20,6 +20,17 @@ func (q *Queries) DeleteUserByClerkID(ctx context.Context, clerkID string) error
 	return err
 }
 
+const getUserRole = `-- name: GetUserRole :one
+SELECT role FROM users WHERE clerk_id = $1 AND is_active = TRUE AND deleted_at IS NULL
+`
+
+func (q *Queries) GetUserRole(ctx context.Context, clerkID string) (string, error) {
+	row := q.db.QueryRow(ctx, getUserRole, clerkID)
+	var role string
+	err := row.Scan(&role)
+	return role, err
+}
+
 const listUsers = `-- name: ListUsers :many
 SELECT
     COALESCE(clerk_id, '')::text      AS clerk_id,
