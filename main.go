@@ -259,7 +259,18 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "db": "up"})
 	})
 
-	r.GET("/users", clerkAuthMiddleware(q), func(c *gin.Context) {
+	admin := r.Group("/admin")
+	admin.Use(clerkAuthMiddleware(q))
+
+	admin.GET("/authorize", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	admin.GET("", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "section": "admin"})
+	})
+
+	admin.GET("/users", func(c *gin.Context) {
 		users, err := q.ListUsers(c.Request.Context())
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve users"})
