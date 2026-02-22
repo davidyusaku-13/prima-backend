@@ -250,20 +250,20 @@ func main() {
 	r := gin.Default()
 	r.Use(rateLimitMiddleware(newLimiterStore(10, 20))) // 10 req/sec per IP, burst 20
 
-	r.GET("/health", func(c *gin.Context) {
+	admin := r.Group("/admin")
+	admin.Use(clerkAuthMiddleware(q))
+
+	admin.GET("/authorize", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	admin.GET("/health", func(c *gin.Context) {
 		var v int
 		if err := pool.QueryRow(c.Request.Context(), "SELECT 1").Scan(&v); err != nil {
 			c.JSON(http.StatusOK, gin.H{"status": "degraded", "db": "down"})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "db": "up"})
-	})
-
-	admin := r.Group("/admin")
-	admin.Use(clerkAuthMiddleware(q))
-
-	admin.GET("/authorize", func(c *gin.Context) {
-		c.Status(http.StatusNoContent)
 	})
 
 	admin.GET("", func(c *gin.Context) {
