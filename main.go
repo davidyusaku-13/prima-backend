@@ -253,10 +253,6 @@ func main() {
 	admin := r.Group("/admin")
 	admin.Use(clerkAuthMiddleware(q))
 
-	admin.GET("/authorize", func(c *gin.Context) {
-		c.Status(http.StatusNoContent)
-	})
-
 	admin.GET("/health", func(c *gin.Context) {
 		var v int
 		if err := pool.QueryRow(c.Request.Context(), "SELECT 1").Scan(&v); err != nil {
