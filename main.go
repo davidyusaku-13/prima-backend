@@ -14,6 +14,8 @@ import (
 )
 
 func main() {
+	startedAt := time.Now().UTC()
+
 	_ = godotenv.Load()
 
 	clerkSecretKey := os.Getenv("CLERK_SECRET_KEY")
@@ -45,12 +47,19 @@ func main() {
 	}
 
 	queries := db.New(pool)
+	healthService := NewHealthService(HealthServiceDeps{
+		StartedAt: startedAt,
+		ProbeDB: func(ctx context.Context) error {
+			var dbProbe int
+			return pool.QueryRow(ctx, "SELECT 1").Scan(&dbProbe)
+		},
+	})
 
 	router := gin.Default()
 	router.SetTrustedProxies([]string{"127.0.0.1:8787"})
 	router.Use(rateLimitMiddleware(newLimiterStore(10, 20))) // 10 req/sec per IP, burst 20
 
-	registerAdminRoutes(router, queries, pool)
+	registerAdminRoutes(router, queries, healthService)
 	registerClerkWebhookRoutes(router, queries, webhookSecret)
 
 	if err := router.Run(":8080"); err != nil {

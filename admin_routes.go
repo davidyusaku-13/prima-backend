@@ -6,20 +6,15 @@ import (
 	"backend/internal/db"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func registerAdminRoutes(router *gin.Engine, queries *db.Queries, pool *pgxpool.Pool) {
+func registerAdminRoutes(router *gin.Engine, queries *db.Queries, healthService *HealthService) {
 	admin := router.Group("/admin")
 	admin.Use(clerkAuthMiddleware(queries))
 
 	admin.GET("/health", func(c *gin.Context) {
-		var dbProbe int
-		if err := pool.QueryRow(c.Request.Context(), "SELECT 1").Scan(&dbProbe); err != nil {
-			c.JSON(http.StatusOK, gin.H{"status": "degraded", "db": "down"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "db": "up"})
+		snapshot := healthService.Snapshot(c.Request.Context())
+		c.JSON(http.StatusOK, snapshot)
 	})
 
 	admin.GET("", func(c *gin.Context) {
