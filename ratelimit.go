@@ -61,6 +61,11 @@ func (store *limiterStore) get(ip string) *rate.Limiter {
 
 func rateLimitMiddleware(store *limiterStore) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if c.Request.Method == http.MethodOptions {
+			c.Next()
+			return
+		}
+
 		ip := c.ClientIP()
 		if !store.get(ip).Allow() {
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})

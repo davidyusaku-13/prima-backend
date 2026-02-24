@@ -57,6 +57,7 @@ func main() {
 
 	router := gin.Default()
 	router.SetTrustedProxies([]string{"127.0.0.1:8787"})
+	router.Use(corsMiddleware())
 	router.Use(rateLimitMiddleware(newLimiterStore(10, 20))) // 10 req/sec per IP, burst 20
 
 	registerAdminRoutes(router, queries, healthService)
