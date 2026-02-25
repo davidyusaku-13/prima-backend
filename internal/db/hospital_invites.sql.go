@@ -17,6 +17,7 @@ SET consumed_at = NOW(),
     consumed_by_clerk_id = $2
 WHERE id = $1
   AND consumed_at IS NULL
+  AND revoked_at IS NULL
   AND expires_at > NOW()
 `
 
@@ -53,14 +54,26 @@ type CreateHospitalInviteParams struct {
 	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
 }
 
-func (q *Queries) CreateHospitalInvite(ctx context.Context, arg CreateHospitalInviteParams) (HospitalInvite, error) {
+type CreateHospitalInviteRow struct {
+	ID                int64              `json:"id"`
+	HospitalID        int64              `json:"hospital_id"`
+	TokenHash         string             `json:"token_hash"`
+	InviteRole        string             `json:"invite_role"`
+	CreatedByClerkID  string             `json:"created_by_clerk_id"`
+	ExpiresAt         pgtype.Timestamptz `json:"expires_at"`
+	ConsumedAt        pgtype.Timestamptz `json:"consumed_at"`
+	ConsumedByClerkID pgtype.Text        `json:"consumed_by_clerk_id"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) CreateHospitalInvite(ctx context.Context, arg CreateHospitalInviteParams) (CreateHospitalInviteRow, error) {
 	row := q.db.QueryRow(ctx, createHospitalInvite,
 		arg.HospitalID,
 		arg.TokenHash,
 		arg.CreatedByClerkID,
 		arg.ExpiresAt,
 	)
-	var i HospitalInvite
+	var i CreateHospitalInviteRow
 	err := row.Scan(
 		&i.ID,
 		&i.HospitalID,
@@ -75,6 +88,48 @@ func (q *Queries) CreateHospitalInvite(ctx context.Context, arg CreateHospitalIn
 	return i, err
 }
 
+const getHospitalInviteByIDForUpdate = `-- name: GetHospitalInviteByIDForUpdate :one
+SELECT
+  id,
+  hospital_id,
+  invite_role,
+  expires_at,
+  consumed_at,
+  revoked_at
+FROM hospital_invites
+WHERE id = $1
+  AND hospital_id = $2
+FOR UPDATE
+`
+
+type GetHospitalInviteByIDForUpdateParams struct {
+	ID         int64 `json:"id"`
+	HospitalID int64 `json:"hospital_id"`
+}
+
+type GetHospitalInviteByIDForUpdateRow struct {
+	ID         int64              `json:"id"`
+	HospitalID int64              `json:"hospital_id"`
+	InviteRole string             `json:"invite_role"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	ConsumedAt pgtype.Timestamptz `json:"consumed_at"`
+	RevokedAt  pgtype.Timestamptz `json:"revoked_at"`
+}
+
+func (q *Queries) GetHospitalInviteByIDForUpdate(ctx context.Context, arg GetHospitalInviteByIDForUpdateParams) (GetHospitalInviteByIDForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getHospitalInviteByIDForUpdate, arg.ID, arg.HospitalID)
+	var i GetHospitalInviteByIDForUpdateRow
+	err := row.Scan(
+		&i.ID,
+		&i.HospitalID,
+		&i.InviteRole,
+		&i.ExpiresAt,
+		&i.ConsumedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const getHospitalInviteByTokenHash = `-- name: GetHospitalInviteByTokenHash :one
 SELECT
   hi.id,
@@ -85,6 +140,8 @@ SELECT
   hi.expires_at,
   hi.consumed_at,
   hi.consumed_by_clerk_id,
+  hi.revoked_at,
+  hi.revoked_by_clerk_id,
   hi.created_at,
   h.is_active AS hospital_is_active,
   h.deleted_at AS hospital_deleted_at
@@ -102,6 +159,8 @@ type GetHospitalInviteByTokenHashRow struct {
 	ExpiresAt         pgtype.Timestamptz `json:"expires_at"`
 	ConsumedAt        pgtype.Timestamptz `json:"consumed_at"`
 	ConsumedByClerkID pgtype.Text        `json:"consumed_by_clerk_id"`
+	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
+	RevokedByClerkID  pgtype.Text        `json:"revoked_by_clerk_id"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	HospitalIsActive  bool               `json:"hospital_is_active"`
 	HospitalDeletedAt pgtype.Timestamptz `json:"hospital_deleted_at"`
@@ -119,6 +178,8 @@ func (q *Queries) GetHospitalInviteByTokenHash(ctx context.Context, tokenHash st
 		&i.ExpiresAt,
 		&i.ConsumedAt,
 		&i.ConsumedByClerkID,
+		&i.RevokedAt,
+		&i.RevokedByClerkID,
 		&i.CreatedAt,
 		&i.HospitalIsActive,
 		&i.HospitalDeletedAt,
@@ -135,6 +196,8 @@ SELECT
   hi.expires_at,
   hi.consumed_at,
   hi.consumed_by_clerk_id,
+  hi.revoked_at,
+  hi.revoked_by_clerk_id,
   hi.created_at
 FROM hospital_invites hi
 JOIN hospitals h ON h.id = hi.hospital_id
@@ -151,6 +214,8 @@ type ListHospitalInvitesBySlugRow struct {
 	ExpiresAt         pgtype.Timestamptz `json:"expires_at"`
 	ConsumedAt        pgtype.Timestamptz `json:"consumed_at"`
 	ConsumedByClerkID pgtype.Text        `json:"consumed_by_clerk_id"`
+	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
+	RevokedByClerkID  pgtype.Text        `json:"revoked_by_clerk_id"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -171,6 +236,8 @@ func (q *Queries) ListHospitalInvitesBySlug(ctx context.Context, slug string) ([
 			&i.ExpiresAt,
 			&i.ConsumedAt,
 			&i.ConsumedByClerkID,
+			&i.RevokedAt,
+			&i.RevokedByClerkID,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -181,4 +248,29 @@ func (q *Queries) ListHospitalInvitesBySlug(ctx context.Context, slug string) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const revokeHospitalInvite = `-- name: RevokeHospitalInvite :execrows
+UPDATE hospital_invites
+SET revoked_at = NOW(),
+    revoked_by_clerk_id = $3
+WHERE id = $1
+  AND hospital_id = $2
+  AND consumed_at IS NULL
+  AND revoked_at IS NULL
+  AND expires_at > NOW()
+`
+
+type RevokeHospitalInviteParams struct {
+	ID               int64       `json:"id"`
+	HospitalID       int64       `json:"hospital_id"`
+	RevokedByClerkID pgtype.Text `json:"revoked_by_clerk_id"`
+}
+
+func (q *Queries) RevokeHospitalInvite(ctx context.Context, arg RevokeHospitalInviteParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeHospitalInvite, arg.ID, arg.HospitalID, arg.RevokedByClerkID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

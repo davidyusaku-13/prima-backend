@@ -29,6 +29,8 @@ type HospitalInvite struct {
 	ConsumedAt        pgtype.Timestamptz `json:"consumed_at"`
 	ConsumedByClerkID pgtype.Text        `json:"consumed_by_clerk_id"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
+	RevokedByClerkID  pgtype.Text        `json:"revoked_by_clerk_id"`
 }
 
 type HospitalMembership struct {

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -576,6 +577,143 @@ func registerAdminRoutes(router *gin.Engine, queries *db.Queries, pool *pgxpool.
 		c.JSON(http.StatusOK, invites)
 	})
 
+	admin.POST("/hospitals/:slug/invites/:inviteID/replace-link", func(c *gin.Context) {
+		slug := strings.TrimSpace(c.Param("slug"))
+		if slug == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "hospital slug is required"})
+			return
+		}
+
+		hospital, ok := loadHospitalForAdminAccess(c, queries, slug)
+		if !ok {
+			return
+		}
+
+		inviteID, err := strconv.ParseInt(strings.TrimSpace(c.Param("inviteID")), 10, 64)
+		if err != nil || inviteID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invite id is invalid"})
+			return
+		}
+
+		tx, err := pool.Begin(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start transaction"})
+			return
+		}
+		defer tx.Rollback(c.Request.Context())
+		qtx := queries.WithTx(tx)
+
+		invite, err := qtx.GetHospitalInviteByIDForUpdate(c.Request.Context(), db.GetHospitalInviteByIDForUpdateParams{
+			ID:         inviteID,
+			HospitalID: hospital.ID,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "invite not found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load invite"})
+			return
+		}
+
+		now := time.Now().UTC()
+		if invite.ConsumedAt.Valid || invite.RevokedAt.Valid || !invite.ExpiresAt.Valid || !invite.ExpiresAt.Time.After(now) {
+			c.JSON(http.StatusConflict, gin.H{"error": "invite is not active or already unavailable"})
+			return
+		}
+
+		token, err := generateInviteToken()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate invite token"})
+			return
+		}
+
+		remainingTTL := invite.ExpiresAt.Time.Sub(now)
+		if remainingTTL <= 0 {
+			remainingTTL = 72 * time.Hour
+		}
+		if remainingTTL < time.Hour {
+			remainingTTL = time.Hour
+		}
+		if remainingTTL > 720*time.Hour {
+			remainingTTL = 720 * time.Hour
+		}
+		newExpiresAt := now.Add(remainingTTL)
+
+		revokedRows, err := qtx.RevokeHospitalInvite(c.Request.Context(), db.RevokeHospitalInviteParams{
+			ID:               invite.ID,
+			HospitalID:       hospital.ID,
+			RevokedByClerkID: toNullableText(authClerkID(c)),
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to revoke invite"})
+			return
+		}
+		if revokedRows == 0 {
+			c.JSON(http.StatusConflict, gin.H{"error": "invite is not active or already unavailable"})
+			return
+		}
+
+		newInvite, err := qtx.CreateHospitalInvite(c.Request.Context(), db.CreateHospitalInviteParams{
+			HospitalID:       hospital.ID,
+			TokenHash:        hashInviteToken(token),
+			CreatedByClerkID: authClerkID(c),
+			ExpiresAt:        pgtype.Timestamptz{Time: newExpiresAt, Valid: true},
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create replacement invite"})
+			return
+		}
+
+		if err := tx.Commit(c.Request.Context()); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to replace invite"})
+			return
+		}
+
+		invitePath := "/register?invite=" + url.QueryEscape(token)
+		c.JSON(http.StatusOK, gin.H{
+			"old_invite_id": invite.ID,
+			"new_invite_id": newInvite.ID,
+			"invite_path":   invitePath,
+			"expires_at":    newInvite.ExpiresAt.Time.UTC().Format(time.RFC3339),
+		})
+	})
+
+	admin.DELETE("/hospitals/:slug/invites/:inviteID", func(c *gin.Context) {
+		slug := strings.TrimSpace(c.Param("slug"))
+		if slug == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "hospital slug is required"})
+			return
+		}
+
+		hospital, ok := loadHospitalForAdminAccess(c, queries, slug)
+		if !ok {
+			return
+		}
+
+		inviteID, err := strconv.ParseInt(strings.TrimSpace(c.Param("inviteID")), 10, 64)
+		if err != nil || inviteID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invite id is invalid"})
+			return
+		}
+
+		affectedRows, err := queries.RevokeHospitalInvite(c.Request.Context(), db.RevokeHospitalInviteParams{
+			ID:               inviteID,
+			HospitalID:       hospital.ID,
+			RevokedByClerkID: toNullableText(authClerkID(c)),
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to revoke invite"})
+			return
+		}
+		if affectedRows == 0 {
+			c.JSON(http.StatusConflict, gin.H{"error": "invite is not active or already unavailable"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
 	registerInviteRoutes(router, queries, pool)
 }
 
@@ -635,6 +773,10 @@ func registerInviteRoutes(router *gin.Engine, queries *db.Queries, pool *pgxpool
 		}
 		if invite.HospitalDeletedAt.Valid || !invite.HospitalIsActive {
 			c.JSON(http.StatusForbidden, gin.H{"error": "hospital is unavailable"})
+			return
+		}
+		if invite.RevokedAt.Valid {
+			c.JSON(http.StatusConflict, gin.H{"error": "invite revoked"})
 			return
 		}
 		if invite.ConsumedAt.Valid {

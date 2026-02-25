@@ -12,12 +12,13 @@ type Querier interface {
 	AssignHospitalAdmin(ctx context.Context, arg AssignHospitalAdminParams) error
 	ConsumeHospitalInvite(ctx context.Context, arg ConsumeHospitalInviteParams) (int64, error)
 	CreateHospital(ctx context.Context, arg CreateHospitalParams) (Hospital, error)
-	CreateHospitalInvite(ctx context.Context, arg CreateHospitalInviteParams) (HospitalInvite, error)
+	CreateHospitalInvite(ctx context.Context, arg CreateHospitalInviteParams) (CreateHospitalInviteRow, error)
 	DeactivateHospitalAdminMembership(ctx context.Context, arg DeactivateHospitalAdminMembershipParams) (int64, error)
 	DeleteUserByClerkID(ctx context.Context, clerkID string) error
 	GetActiveHospitalMembershipByUser(ctx context.Context, userClerkID string) (GetActiveHospitalMembershipByUserRow, error)
 	GetHospitalByID(ctx context.Context, id int64) (Hospital, error)
 	GetHospitalBySlug(ctx context.Context, slug string) (Hospital, error)
+	GetHospitalInviteByIDForUpdate(ctx context.Context, arg GetHospitalInviteByIDForUpdateParams) (GetHospitalInviteByIDForUpdateRow, error)
 	GetHospitalInviteByTokenHash(ctx context.Context, tokenHash string) (GetHospitalInviteByTokenHashRow, error)
 	GetUserAuthContext(ctx context.Context, clerkID string) (GetUserAuthContextRow, error)
 	GetUserByClerkID(ctx context.Context, clerkID string) (GetUserByClerkIDRow, error)
@@ -30,6 +31,7 @@ type Querier interface {
 	ListHospitalUsersBySlug(ctx context.Context, slug string) ([]ListHospitalUsersBySlugRow, error)
 	ListHospitals(ctx context.Context) ([]Hospital, error)
 	ListUsers(ctx context.Context) ([]ListUsersRow, error)
+	RevokeHospitalInvite(ctx context.Context, arg RevokeHospitalInviteParams) (int64, error)
 	SetUserActiveByClerkID(ctx context.Context, arg SetUserActiveByClerkIDParams) error
 	SetUserRoleByClerkID(ctx context.Context, arg SetUserRoleByClerkIDParams) error
 	SoftDeleteUserByClerkID(ctx context.Context, clerkID string) error
