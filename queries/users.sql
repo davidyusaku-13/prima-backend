@@ -6,7 +6,11 @@ VALUES (
        THEN 'superadmin'
        ELSE 'user'
   END,
-  TRUE, NOW(), NOW()
+  CASE WHEN NOT EXISTS (SELECT 1 FROM users WHERE deleted_at IS NULL)
+       THEN TRUE
+       ELSE FALSE
+  END,
+  NOW(), NOW()
 )
 ON CONFLICT (clerk_id) DO UPDATE
 SET username   = EXCLUDED.username,
@@ -14,7 +18,20 @@ SET username   = EXCLUDED.username,
     first_name = EXCLUDED.first_name,
     last_name  = EXCLUDED.last_name,
     email      = COALESCE(EXCLUDED.email, users.email),
-    is_active  = TRUE,
+    is_active  = CASE
+                   WHEN users.role = 'superadmin' THEN TRUE
+                   WHEN EXISTS (
+                     SELECT 1
+                     FROM hospital_memberships hm
+                     JOIN hospitals h ON h.id = hm.hospital_id
+                     WHERE hm.user_clerk_id = users.clerk_id
+                       AND hm.is_active = TRUE
+                       AND hm.deleted_at IS NULL
+                       AND h.is_active = TRUE
+                       AND h.deleted_at IS NULL
+                   ) THEN TRUE
+                   ELSE FALSE
+                 END,
     deleted_at = NULL,
     updated_at = NOW();
 
@@ -51,3 +68,46 @@ WHERE clerk_id = $1;
 
 -- name: GetUserRole :one
 SELECT role FROM users WHERE clerk_id = $1 AND is_active = TRUE AND deleted_at IS NULL;
+
+-- name: GetUserAuthContext :one
+SELECT
+  u.clerk_id,
+  u.role AS global_role,
+  u.is_active,
+  COALESCE(hm.hospital_id, 0)::bigint AS hospital_id,
+  COALESCE(hm.membership_role, '')::text AS membership_role
+FROM users u
+LEFT JOIN LATERAL (
+  SELECT hm.hospital_id, hm.membership_role
+  FROM hospital_memberships hm
+  JOIN hospitals h ON h.id = hm.hospital_id
+  WHERE hm.user_clerk_id = u.clerk_id
+    AND hm.is_active = TRUE
+    AND hm.deleted_at IS NULL
+    AND h.is_active = TRUE
+    AND h.deleted_at IS NULL
+  LIMIT 1
+) hm ON TRUE
+WHERE u.clerk_id = $1
+  AND u.is_active = TRUE
+  AND u.deleted_at IS NULL;
+
+-- name: GetUserByClerkID :one
+SELECT
+  clerk_id,
+  name,
+  role,
+  is_active,
+  deleted_at
+FROM users
+WHERE clerk_id = $1;
+
+-- name: SetUserActiveByClerkID :exec
+UPDATE users
+SET is_active = $2, updated_at = NOW()
+WHERE clerk_id = $1;
+
+-- name: SetUserRoleByClerkID :exec
+UPDATE users
+SET role = $2, updated_at = NOW()
+WHERE clerk_id = $1;

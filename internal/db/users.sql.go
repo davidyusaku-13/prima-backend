@@ -20,6 +20,83 @@ func (q *Queries) DeleteUserByClerkID(ctx context.Context, clerkID string) error
 	return err
 }
 
+const getUserAuthContext = `-- name: GetUserAuthContext :one
+SELECT
+  u.clerk_id,
+  u.role AS global_role,
+  u.is_active,
+  COALESCE(hm.hospital_id, 0)::bigint AS hospital_id,
+  COALESCE(hm.membership_role, '')::text AS membership_role
+FROM users u
+LEFT JOIN LATERAL (
+  SELECT hm.hospital_id, hm.membership_role
+  FROM hospital_memberships hm
+  JOIN hospitals h ON h.id = hm.hospital_id
+  WHERE hm.user_clerk_id = u.clerk_id
+    AND hm.is_active = TRUE
+    AND hm.deleted_at IS NULL
+    AND h.is_active = TRUE
+    AND h.deleted_at IS NULL
+  LIMIT 1
+) hm ON TRUE
+WHERE u.clerk_id = $1
+  AND u.is_active = TRUE
+  AND u.deleted_at IS NULL
+`
+
+type GetUserAuthContextRow struct {
+	ClerkID        string `json:"clerk_id"`
+	GlobalRole     string `json:"global_role"`
+	IsActive       bool   `json:"is_active"`
+	HospitalID     int64  `json:"hospital_id"`
+	MembershipRole string `json:"membership_role"`
+}
+
+func (q *Queries) GetUserAuthContext(ctx context.Context, clerkID string) (GetUserAuthContextRow, error) {
+	row := q.db.QueryRow(ctx, getUserAuthContext, clerkID)
+	var i GetUserAuthContextRow
+	err := row.Scan(
+		&i.ClerkID,
+		&i.GlobalRole,
+		&i.IsActive,
+		&i.HospitalID,
+		&i.MembershipRole,
+	)
+	return i, err
+}
+
+const getUserByClerkID = `-- name: GetUserByClerkID :one
+SELECT
+  clerk_id,
+  name,
+  role,
+  is_active,
+  deleted_at
+FROM users
+WHERE clerk_id = $1
+`
+
+type GetUserByClerkIDRow struct {
+	ClerkID   string             `json:"clerk_id"`
+	Name      string             `json:"name"`
+	Role      string             `json:"role"`
+	IsActive  bool               `json:"is_active"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+}
+
+func (q *Queries) GetUserByClerkID(ctx context.Context, clerkID string) (GetUserByClerkIDRow, error) {
+	row := q.db.QueryRow(ctx, getUserByClerkID, clerkID)
+	var i GetUserByClerkIDRow
+	err := row.Scan(
+		&i.ClerkID,
+		&i.Name,
+		&i.Role,
+		&i.IsActive,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const getUserRole = `-- name: GetUserRole :one
 SELECT role FROM users WHERE clerk_id = $1 AND is_active = TRUE AND deleted_at IS NULL
 `
@@ -98,6 +175,38 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 	return items, nil
 }
 
+const setUserActiveByClerkID = `-- name: SetUserActiveByClerkID :exec
+UPDATE users
+SET is_active = $2, updated_at = NOW()
+WHERE clerk_id = $1
+`
+
+type SetUserActiveByClerkIDParams struct {
+	ClerkID  string `json:"clerk_id"`
+	IsActive bool   `json:"is_active"`
+}
+
+func (q *Queries) SetUserActiveByClerkID(ctx context.Context, arg SetUserActiveByClerkIDParams) error {
+	_, err := q.db.Exec(ctx, setUserActiveByClerkID, arg.ClerkID, arg.IsActive)
+	return err
+}
+
+const setUserRoleByClerkID = `-- name: SetUserRoleByClerkID :exec
+UPDATE users
+SET role = $2, updated_at = NOW()
+WHERE clerk_id = $1
+`
+
+type SetUserRoleByClerkIDParams struct {
+	ClerkID string `json:"clerk_id"`
+	Role    string `json:"role"`
+}
+
+func (q *Queries) SetUserRoleByClerkID(ctx context.Context, arg SetUserRoleByClerkIDParams) error {
+	_, err := q.db.Exec(ctx, setUserRoleByClerkID, arg.ClerkID, arg.Role)
+	return err
+}
+
 const softDeleteUserByClerkID = `-- name: SoftDeleteUserByClerkID :exec
 UPDATE users
 SET deleted_at = NOW(), is_active = FALSE, updated_at = NOW()
@@ -128,7 +237,11 @@ VALUES (
        THEN 'superadmin'
        ELSE 'user'
   END,
-  TRUE, NOW(), NOW()
+  CASE WHEN NOT EXISTS (SELECT 1 FROM users WHERE deleted_at IS NULL)
+       THEN TRUE
+       ELSE FALSE
+  END,
+  NOW(), NOW()
 )
 ON CONFLICT (clerk_id) DO UPDATE
 SET username   = EXCLUDED.username,
@@ -136,7 +249,20 @@ SET username   = EXCLUDED.username,
     first_name = EXCLUDED.first_name,
     last_name  = EXCLUDED.last_name,
     email      = COALESCE(EXCLUDED.email, users.email),
-    is_active  = TRUE,
+    is_active  = CASE
+                   WHEN users.role = 'superadmin' THEN TRUE
+                   WHEN EXISTS (
+                     SELECT 1
+                     FROM hospital_memberships hm
+                     JOIN hospitals h ON h.id = hm.hospital_id
+                     WHERE hm.user_clerk_id = users.clerk_id
+                       AND hm.is_active = TRUE
+                       AND hm.deleted_at IS NULL
+                       AND h.is_active = TRUE
+                       AND h.deleted_at IS NULL
+                   ) THEN TRUE
+                   ELSE FALSE
+                 END,
     deleted_at = NULL,
     updated_at = NOW()
 `

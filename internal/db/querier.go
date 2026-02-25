@@ -9,11 +9,32 @@ import (
 )
 
 type Querier interface {
+	AssignHospitalAdmin(ctx context.Context, arg AssignHospitalAdminParams) error
+	ConsumeHospitalInvite(ctx context.Context, arg ConsumeHospitalInviteParams) (int64, error)
+	CreateHospital(ctx context.Context, arg CreateHospitalParams) (Hospital, error)
+	CreateHospitalInvite(ctx context.Context, arg CreateHospitalInviteParams) (HospitalInvite, error)
+	DeactivateHospitalAdminMembership(ctx context.Context, arg DeactivateHospitalAdminMembershipParams) (int64, error)
 	DeleteUserByClerkID(ctx context.Context, clerkID string) error
+	GetActiveHospitalMembershipByUser(ctx context.Context, userClerkID string) (GetActiveHospitalMembershipByUserRow, error)
+	GetHospitalByID(ctx context.Context, id int64) (Hospital, error)
+	GetHospitalBySlug(ctx context.Context, slug string) (Hospital, error)
+	GetHospitalInviteByTokenHash(ctx context.Context, tokenHash string) (GetHospitalInviteByTokenHashRow, error)
+	GetUserAuthContext(ctx context.Context, clerkID string) (GetUserAuthContextRow, error)
+	GetUserByClerkID(ctx context.Context, clerkID string) (GetUserByClerkIDRow, error)
 	GetUserRole(ctx context.Context, clerkID string) (string, error)
+	HasActiveAdminMembership(ctx context.Context, userClerkID string) (bool, error)
+	HasActiveHospitalMembership(ctx context.Context, userClerkID string) (bool, error)
+	ListAdminAssignmentCandidates(ctx context.Context) ([]ListAdminAssignmentCandidatesRow, error)
+	ListHospitalAdminsBySlug(ctx context.Context, slug string) ([]ListHospitalAdminsBySlugRow, error)
+	ListHospitalInvitesBySlug(ctx context.Context, slug string) ([]ListHospitalInvitesBySlugRow, error)
+	ListHospitalUsersBySlug(ctx context.Context, slug string) ([]ListHospitalUsersBySlugRow, error)
+	ListHospitals(ctx context.Context) ([]Hospital, error)
 	ListUsers(ctx context.Context) ([]ListUsersRow, error)
+	SetUserActiveByClerkID(ctx context.Context, arg SetUserActiveByClerkIDParams) error
+	SetUserRoleByClerkID(ctx context.Context, arg SetUserRoleByClerkIDParams) error
 	SoftDeleteUserByClerkID(ctx context.Context, clerkID string) error
 	UpdateLastLogin(ctx context.Context, clerkID string) error
+	UpsertHospitalUserMembership(ctx context.Context, arg UpsertHospitalUserMembershipParams) error
 	UpsertUserWithRole(ctx context.Context, arg UpsertUserWithRoleParams) error
 }
 

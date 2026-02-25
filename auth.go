@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -8,45 +9,76 @@ import (
 
 	"github.com/clerk/clerk-sdk-go/v2/jwt"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 )
 
+type authIdentity struct {
+	ClerkID string
+}
+
+func parseBearerToken(authHeader string) string {
+	if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+}
+
+func verifyClerkIdentityFromRequest(c *gin.Context) (authIdentity, error) {
+	token := parseBearerToken(c.GetHeader("Authorization"))
+	if token == "" {
+		return authIdentity{}, errors.New("missing authorization header")
+	}
+
+	claims, err := jwt.Verify(c.Request.Context(), &jwt.VerifyParams{Token: token})
+	if err != nil {
+		return authIdentity{}, errors.New("invalid or expired token")
+	}
+
+	clerkID := strings.TrimSpace(claims.Subject)
+	if clerkID == "" {
+		return authIdentity{}, errors.New("invalid token subject")
+	}
+
+	return authIdentity{ClerkID: clerkID}, nil
+}
+
 // clerkAuthMiddleware verifies the Clerk session JWT and enforces that the
-// caller has role "superadmin" or "admin" in the database.
+// caller has role "superadmin" or hospital-scoped "admin".
 func clerkAuthMiddleware(queries *db.Queries) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing authorization header"})
-			return
-		}
-
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-
-		claims, err := jwt.Verify(c.Request.Context(), &jwt.VerifyParams{Token: token})
+		identity, err := verifyClerkIdentityFromRequest(c)
 		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			return
 		}
 
-		clerkID := claims.Subject
-		if clerkID == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token subject"})
-			return
-		}
-
-		role, err := queries.GetUserRole(c.Request.Context(), clerkID)
+		authCtx, err := queries.GetUserAuthContext(c.Request.Context(), identity.ClerkID)
 		if err != nil {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "user not found or inactive"})
+			if errors.Is(err, pgx.ErrNoRows) {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "user not found or inactive"})
+				return
+			}
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "failed to load auth context"})
 			return
 		}
 
-		if role != "superadmin" && role != "admin" {
+		switch authCtx.GlobalRole {
+		case "superadmin":
+			// unrestricted.
+		case "admin":
+			if authCtx.HospitalID <= 0 || authCtx.MembershipRole != "admin" {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "admin is not assigned to an active hospital"})
+				return
+			}
+		default:
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})
 			return
 		}
 
-		c.Set("clerk_id", clerkID)
-		c.Set("role", role)
+		c.Set("clerk_id", authCtx.ClerkID)
+		c.Set("role", authCtx.GlobalRole)
+		c.Set("hospital_id", authCtx.HospitalID)
+		c.Set("membership_role", authCtx.MembershipRole)
 		c.Next()
 	}
 }

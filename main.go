@@ -60,7 +60,7 @@ func main() {
 	router.Use(corsMiddleware())
 	router.Use(rateLimitMiddleware(newLimiterStore(10, 20))) // 10 req/sec per IP, burst 20
 
-	registerAdminRoutes(router, queries, healthService)
+	registerAdminRoutes(router, queries, pool, healthService)
 	registerClerkWebhookRoutes(router, queries, webhookSecret)
 
 	if err := router.Run(":8080"); err != nil {

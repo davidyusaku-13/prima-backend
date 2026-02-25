@@ -8,6 +8,41 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Hospital struct {
+	ID               int64              `json:"id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	IsActive         bool               `json:"is_active"`
+	CreatedByClerkID string             `json:"created_by_clerk_id"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type HospitalInvite struct {
+	ID                int64              `json:"id"`
+	HospitalID        int64              `json:"hospital_id"`
+	TokenHash         string             `json:"token_hash"`
+	InviteRole        string             `json:"invite_role"`
+	CreatedByClerkID  string             `json:"created_by_clerk_id"`
+	ExpiresAt         pgtype.Timestamptz `json:"expires_at"`
+	ConsumedAt        pgtype.Timestamptz `json:"consumed_at"`
+	ConsumedByClerkID pgtype.Text        `json:"consumed_by_clerk_id"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+}
+
+type HospitalMembership struct {
+	ID               int64              `json:"id"`
+	HospitalID       int64              `json:"hospital_id"`
+	UserClerkID      string             `json:"user_clerk_id"`
+	MembershipRole   string             `json:"membership_role"`
+	IsActive         bool               `json:"is_active"`
+	InvitedByClerkID pgtype.Text        `json:"invited_by_clerk_id"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+}
+
 type User struct {
 	ClerkID     string             `json:"clerk_id"`
 	Name        string             `json:"name"`
