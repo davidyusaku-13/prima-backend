@@ -48,7 +48,9 @@ func main() {
 
 	queries := db.New(pool)
 	healthService := NewHealthService(HealthServiceDeps{
-		StartedAt: startedAt,
+		StartedAt:    startedAt,
+		Version:      os.Getenv("APP_VERSION"),
+		ProbeTimeout: 2 * time.Second,
 		ProbeDB: func(ctx context.Context) error {
 			var dbProbe int
 			return pool.QueryRow(ctx, "SELECT 1").Scan(&dbProbe)

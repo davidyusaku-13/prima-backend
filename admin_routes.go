@@ -127,7 +127,7 @@ func registerAdminRoutes(router *gin.Engine, queries *db.Queries, pool *pgxpool.
 
 	admin.GET("/health", func(c *gin.Context) {
 		snapshot := healthService.Snapshot(c.Request.Context())
-		c.JSON(http.StatusOK, snapshot)
+		c.JSON(healthHTTPStatusCode(snapshot.Status), snapshot)
 	})
 
 	admin.GET("", func(c *gin.Context) {
@@ -849,4 +849,15 @@ func registerInviteRoutes(router *gin.Engine, queries *db.Queries, pool *pgxpool
 			"role":        "user",
 		})
 	})
+}
+
+func healthHTTPStatusCode(status string) int {
+	switch status {
+	case healthStatusOK:
+		return http.StatusOK
+	case healthStatusDegraded, healthStatusDown:
+		return http.StatusServiceUnavailable
+	default:
+		return http.StatusServiceUnavailable
+	}
 }
