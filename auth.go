@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -15,6 +16,13 @@ import (
 type authIdentity struct {
 	ClerkID string
 }
+
+type authQueries interface {
+	GetUserAuthContext(ctx context.Context, clerkID string) (db.GetUserAuthContextRow, error)
+	UpdateLastLogin(ctx context.Context, clerkID string) error
+}
+
+type identityVerifier func(c *gin.Context) (authIdentity, error)
 
 func parseBearerToken(authHeader string) string {
 	if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
@@ -45,8 +53,12 @@ func verifyClerkIdentityFromRequest(c *gin.Context) (authIdentity, error) {
 // clerkAuthMiddleware verifies the Clerk session JWT and enforces that the
 // caller has role "superadmin" or hospital-scoped "admin".
 func clerkAuthMiddleware(queries *db.Queries) gin.HandlerFunc {
+	return clerkAuthMiddlewareWithIdentityVerifier(queries, verifyClerkIdentityFromRequest)
+}
+
+func clerkAuthMiddlewareWithIdentityVerifier(queries authQueries, verify identityVerifier) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		identity, err := verifyClerkIdentityFromRequest(c)
+		identity, err := verify(c)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			return
@@ -74,6 +86,8 @@ func clerkAuthMiddleware(queries *db.Queries) gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})
 			return
 		}
+
+		_ = queries.UpdateLastLogin(c.Request.Context(), authCtx.ClerkID)
 
 		c.Set("clerk_id", authCtx.ClerkID)
 		c.Set("role", authCtx.GlobalRole)
