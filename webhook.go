@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -19,6 +20,7 @@ type ClerkUserWebhookEvent struct {
 	Type string `json:"type"`
 	Data struct {
 		ID                    string `json:"id"`
+		UserID                string `json:"user_id"`
 		Username              string `json:"username"`
 		FirstName             string `json:"first_name"`
 		LastName              string `json:"last_name"`
@@ -28,6 +30,16 @@ type ClerkUserWebhookEvent struct {
 			EmailAddress string `json:"email_address"`
 		} `json:"email_addresses"`
 	} `json:"data"`
+}
+
+type webhookQueries interface {
+	UpsertUserWithRole(ctx context.Context, arg db.UpsertUserWithRoleParams) error
+	SoftDeleteUserByClerkID(ctx context.Context, clerkID string) error
+	UpdateLastLogin(ctx context.Context, clerkID string) error
+}
+
+type webhookHandleResult struct {
+	Ignored string
 }
 
 func toNullableText(s string) pgtype.Text {
@@ -105,41 +117,61 @@ func registerClerkWebhookRoutes(router *gin.Engine, queries *db.Queries, webhook
 			return
 		}
 
-		name := strings.TrimSpace(strings.TrimSpace(event.Data.FirstName) + " " + strings.TrimSpace(event.Data.LastName))
-		if name == "" {
-			name = strings.TrimSpace(event.Data.Username)
-		}
-		if name == "" {
-			name = "User"
-		}
-		email := pickClerkEmail(event)
-
-		switch event.Type {
-		case "user.created", "user.updated":
-			if strings.TrimSpace(event.Data.ID) == "" {
-				c.JSON(http.StatusOK, gin.H{"ok": true, "ignored": "missing id", "type": event.Type})
-				return
-			}
-			if err := queries.UpsertUserWithRole(c.Request.Context(), db.UpsertUserWithRoleParams{
-				ClerkID:   strings.TrimSpace(event.Data.ID),
-				Username:  toNullableText(event.Data.Username),
-				Name:      name,
-				Email:     toNullableText(email),
-				FirstName: toNullableText(event.Data.FirstName),
-				LastName:  toNullableText(event.Data.LastName),
-			}); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-		case "user.deleted":
-			if strings.TrimSpace(event.Data.ID) != "" {
-				if err := queries.SoftDeleteUserByClerkID(c.Request.Context(), strings.TrimSpace(event.Data.ID)); err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-					return
-				}
-			}
+		result, err := handleClerkWebhookEvent(c.Request.Context(), queries, event)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"ok": true, "type": event.Type})
+		response := gin.H{"ok": true, "type": event.Type}
+		if result.Ignored != "" {
+			response["ignored"] = result.Ignored
+		}
+		c.JSON(http.StatusOK, response)
 	})
+}
+
+func handleClerkWebhookEvent(ctx context.Context, queries webhookQueries, event ClerkUserWebhookEvent) (webhookHandleResult, error) {
+	name := strings.TrimSpace(strings.TrimSpace(event.Data.FirstName) + " " + strings.TrimSpace(event.Data.LastName))
+	if name == "" {
+		name = strings.TrimSpace(event.Data.Username)
+	}
+	if name == "" {
+		name = "User"
+	}
+	email := pickClerkEmail(event)
+
+	switch event.Type {
+	case "user.created", "user.updated":
+		if strings.TrimSpace(event.Data.ID) == "" {
+			return webhookHandleResult{Ignored: "missing id"}, nil
+		}
+		if err := queries.UpsertUserWithRole(ctx, db.UpsertUserWithRoleParams{
+			ClerkID:   strings.TrimSpace(event.Data.ID),
+			Username:  toNullableText(event.Data.Username),
+			Name:      name,
+			Email:     toNullableText(email),
+			FirstName: toNullableText(event.Data.FirstName),
+			LastName:  toNullableText(event.Data.LastName),
+		}); err != nil {
+			return webhookHandleResult{}, err
+		}
+	case "user.deleted":
+		if strings.TrimSpace(event.Data.ID) == "" {
+			return webhookHandleResult{}, nil
+		}
+		if err := queries.SoftDeleteUserByClerkID(ctx, strings.TrimSpace(event.Data.ID)); err != nil {
+			return webhookHandleResult{}, err
+		}
+	case "session.created":
+		userID := strings.TrimSpace(event.Data.UserID)
+		if userID == "" {
+			return webhookHandleResult{Ignored: "missing user_id"}, nil
+		}
+		if err := queries.UpdateLastLogin(ctx, userID); err != nil {
+			return webhookHandleResult{}, err
+		}
+	}
+
+	return webhookHandleResult{}, nil
 }

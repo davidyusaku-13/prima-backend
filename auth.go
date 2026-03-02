@@ -18,8 +18,7 @@ type authIdentity struct {
 }
 
 type authQueries interface {
-	GetUserAuthContext(ctx context.Context, clerkID string) (db.GetUserAuthContextRow, error)
-	UpdateLastLogin(ctx context.Context, clerkID string) error
+	GetUserAuthContext(c context.Context, clerkID string) (db.GetUserAuthContextRow, error)
 }
 
 type identityVerifier func(c *gin.Context) (authIdentity, error)
@@ -86,8 +85,6 @@ func clerkAuthMiddlewareWithIdentityVerifier(queries authQueries, verify identit
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})
 			return
 		}
-
-		_ = queries.UpdateLastLogin(c.Request.Context(), authCtx.ClerkID)
 
 		c.Set("clerk_id", authCtx.ClerkID)
 		c.Set("role", authCtx.GlobalRole)
