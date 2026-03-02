@@ -8,6 +8,18 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AdminUserAction struct {
+	ID            int64              `json:"id"`
+	ActorClerkID  string             `json:"actor_clerk_id"`
+	TargetClerkID string             `json:"target_clerk_id"`
+	ActionType    string             `json:"action_type"`
+	Reason        string             `json:"reason"`
+	BeforeState   []byte             `json:"before_state"`
+	AfterState    []byte             `json:"after_state"`
+	Metadata      []byte             `json:"metadata"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
 type Hospital struct {
 	ID               int64              `json:"id"`
 	Name             string             `json:"name"`

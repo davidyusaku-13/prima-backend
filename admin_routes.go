@@ -156,6 +156,8 @@ func registerAdminRoutes(router *gin.Engine, queries *db.Queries, pool *pgxpool.
 		c.JSON(http.StatusOK, users)
 	})
 
+	registerAdminUserControlTowerRoutes(admin, queries, pool)
+
 	admin.GET("/hospitals", func(c *gin.Context) {
 		if authRole(c) == "superadmin" {
 			hospitals, err := queries.ListHospitals(c.Request.Context())
