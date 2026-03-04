@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 
 	"backend/internal/db"
 
@@ -23,6 +25,57 @@ type authQueries interface {
 
 type identityVerifier func(c *gin.Context) (authIdentity, error)
 
+var errClerkAuthMisconfigured = errors.New("clerk auth misconfigured")
+
+var verifyClerkToken = jwt.Verify
+
+var (
+	clerkAuthorizedPartiesMu sync.RWMutex
+	clerkAuthorizedParties   = map[string]struct{}{}
+)
+
+func normalizeAuthorizedParty(value string) string {
+	return strings.TrimSpace(strings.ToLower(value))
+}
+
+func setClerkAuthorizedPartiesFromCSV(value string) error {
+	next := make(map[string]struct{})
+	for _, raw := range strings.Split(value, ",") {
+		party := normalizeAuthorizedParty(raw)
+		if party == "" {
+			continue
+		}
+		next[party] = struct{}{}
+	}
+	if len(next) == 0 {
+		return errors.New("CLERK_AUTHORIZED_PARTIES must include at least one origin")
+	}
+
+	clerkAuthorizedPartiesMu.Lock()
+	clerkAuthorizedParties = next
+	clerkAuthorizedPartiesMu.Unlock()
+	return nil
+}
+
+func isAuthorizedParty(value string) bool {
+	party := normalizeAuthorizedParty(value)
+	if party == "" {
+		return false
+	}
+
+	clerkAuthorizedPartiesMu.RLock()
+	_, ok := clerkAuthorizedParties[party]
+	clerkAuthorizedPartiesMu.RUnlock()
+	return ok
+}
+
+func hasAuthorizedParties() bool {
+	clerkAuthorizedPartiesMu.RLock()
+	count := len(clerkAuthorizedParties)
+	clerkAuthorizedPartiesMu.RUnlock()
+	return count > 0
+}
+
 func parseBearerToken(authHeader string) string {
 	if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
 		return ""
@@ -35,8 +88,14 @@ func verifyClerkIdentityFromRequest(c *gin.Context) (authIdentity, error) {
 	if token == "" {
 		return authIdentity{}, errors.New("missing authorization header")
 	}
+	if !hasAuthorizedParties() {
+		return authIdentity{}, fmt.Errorf("%w: CLERK_AUTHORIZED_PARTIES is empty", errClerkAuthMisconfigured)
+	}
 
-	claims, err := jwt.Verify(c.Request.Context(), &jwt.VerifyParams{Token: token})
+	claims, err := verifyClerkToken(c.Request.Context(), &jwt.VerifyParams{
+		Token:                  token,
+		AuthorizedPartyHandler: isAuthorizedParty,
+	})
 	if err != nil {
 		return authIdentity{}, errors.New("invalid or expired token")
 	}
@@ -59,6 +118,10 @@ func clerkAuthMiddlewareWithIdentityVerifier(queries authQueries, verify identit
 	return func(c *gin.Context) {
 		identity, err := verify(c)
 		if err != nil {
+			if errors.Is(err, errClerkAuthMisconfigured) {
+				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "server auth is misconfigured"})
+				return
+			}
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			return
 		}

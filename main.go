@@ -23,6 +23,9 @@ func main() {
 		panic("CLERK_SECRET_KEY is not set")
 	}
 	clerkSDK.SetKey(clerkSecretKey)
+	if err := setClerkAuthorizedPartiesFromCSV(os.Getenv("CLERK_AUTHORIZED_PARTIES")); err != nil {
+		panic(err.Error())
+	}
 
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {

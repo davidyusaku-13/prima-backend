@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"backend/internal/db"
 
@@ -42,6 +44,8 @@ type webhookHandleResult struct {
 	Ignored string
 }
 
+const webhookTimestampTolerance = 5 * time.Minute
+
 func toNullableText(s string) pgtype.Text {
 	s = strings.TrimSpace(s)
 	return pgtype.Text{String: s, Valid: s != ""}
@@ -64,8 +68,16 @@ func pickClerkEmail(event ClerkUserWebhookEvent) string {
 }
 
 // Minimal Svix verification for Clerk webhooks.
-func verifySvixSignature(body []byte, secret, svixID, svixTimestamp, svixSignature string) bool {
+func verifySvixSignature(body []byte, secret, svixID, svixTimestamp, svixSignature string, now time.Time) bool {
 	if secret == "" || svixID == "" || svixTimestamp == "" || svixSignature == "" {
+		return false
+	}
+	timestampUnix, err := strconv.ParseInt(strings.TrimSpace(svixTimestamp), 10, 64)
+	if err != nil {
+		return false
+	}
+	timestamp := time.Unix(timestampUnix, 0).UTC()
+	if timestamp.Before(now.Add(-webhookTimestampTolerance)) || timestamp.After(now.Add(webhookTimestampTolerance)) {
 		return false
 	}
 
@@ -106,6 +118,7 @@ func registerClerkWebhookRoutes(router *gin.Engine, queries *db.Queries, webhook
 			c.GetHeader("svix-id"),
 			c.GetHeader("svix-timestamp"),
 			c.GetHeader("svix-signature"),
+			time.Now().UTC(),
 		) {
 			c.Status(http.StatusUnauthorized)
 			return
